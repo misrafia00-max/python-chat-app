@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Python Chat Room - 异地聊天版</title>
+    <style>
+        body {
+            font-family: Arial;
+            margin: 20px;
+            background: #f0f8ff;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        #chat-messages {
+            border: 2px solid #ddd;
+            height: 400px;
+            overflow-y: scroll;
+            padding: 15px;
+            margin: 15px 0;
+            background: #f9f9f9;
+            border-radius: 8px;
+        }
+        .message {
+            margin: 10px 0;
+            padding: 10px;
+            background: white;
+            border-radius: 8px;
+            border-left: 4px solid #007bff;
+        }
+        .user {
+            color: #007bff;
+            font-weight: bold;
+        }
+        .time {
+            color: #666;
+            font-size: 12px;
+            float: right;
+        }
+        .input-area {
+            display: flex;
+            gap: 10px;
+            margin: 10px 0;
+        }
+        input {
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            font-size: 16px;
+        }
+        button {
+            padding: 10px 20px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .info {
+            text-align: center;
+            color: #666;
+            margin-top: 10px;
+        }
+        .online-users {
+            background: #e8f5e8;
+            padding: 10px;
+            border-radius: 6px;
+            margin-bottom: 10px;
+        }
+    </style>
+    
+    <!-- 引入 Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-firestore-compat.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>🐍 Python Chat Room - 异地聊天版</h1>
+        
+        <div class="online-users">
+            👥 在线用户: <span id="online-count">1</span>
+        </div>
+        
+        <div id="chat-messages">
+            <div class="message" style="text-align:center;color:#666;">
+                正在连接聊天室... ⏳
+            </div>
+        </div>
+        
+        <div class="input-area">
+            <input type="text" id="username" placeholder="你的名字" value="游客" style="width:120px;">
+            <input type="text" id="message-input" placeholder="输入消息..." style="flex:1;">
+            <button onclick="sendMessage()">发送</button>
+        </div>
+        
+        <div class="info">
+            💡 按 Enter 发送消息 | 🌐 消息实时同步
+        </div>
+    </div>
+
+    <script>
+        // 🔥 替换为你的 Firebase 配置
+        const firebaseConfig = {
+            apiKey: "AIzaSyDuuE951y8_draZ1f73VWNo3AxXnucbZZs",
+            authDomain: "python-chat-room-61a2a.firebaseapp.com",
+            projectId: "python-chat-room-61a2a",
+            storageBucket: "python-chat-room-61a2a.firebasestorage.app",
+            messagingSenderId: "10726442398e",
+            appId: "1:18726442398e:web:419c2baac4b55ec68e119"
+        };
+
+        // 初始化 Firebase
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        let currentUser = '游客_' + Math.floor(Math.random() * 1000);
+        let messageCount = 0;
+
+        // 设置默认用户名
+        document.getElementById('username').value = currentUser;
+
+        // 监听消息变化
+        db.collection('messages')
+            .orderBy('timestamp', 'asc')
+            .onSnapshot((snapshot) => {
+                const chat = document.getElementById('chat-messages');
+                
+                snapshot.docChanges().forEach((change) => {
+                    if (change.type === 'added') {
+                        const data = change.doc.data();
+                        addMessageToUI(data.user, data.text, data.timestamp);
+                    }
+                });
+            });
+
+        // 监听在线用户
+        const onlineUsersRef = db.collection('online').doc('users');
+        
+        // 用户上线
+        function userOnline() {
+            const username = document.getElementById('username').value || currentUser;
+            onlineUsersRef.set({
+                [username]: firebase.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+        }
+
+        // 监听在线用户变化
+        onlineUsersRef.onSnapshot((doc) => {
+            if (doc.exists()) {
+                const users = doc.data();
+                const count = Object.keys(users).length;
+                document.getElementById('online-count').textContent = count;
+                
+                // 移除30秒未活动的用户
+                const now = Date.now();
+                Object.keys(users).forEach(user => {
+                    if (now - users[user].toDate().getTime() > 30000) {
+                        const update = {};
+                        update[user] = firebase.firestore.FieldValue.delete();
+                        onlineUsersRef.update(update);
+                    }
+                });
+            }
+        });
+
+        function addMessageToUI(user, message, timestamp) {
+            const chat = document.getElementById('chat-messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message';
+            
+            const time = new Date(timestamp?.toDate() || new Date());
+            const timeStr = time.getHours().toString().padStart(2, '0') + ':' + 
+                           time.getMinutes().toString().padStart(2, '0') + ':' + 
+                           time.getSeconds().toString().padStart(2, '0');
+            
+            messageDiv.innerHTML = 
+                '<span class="user">' + user + '</span>: ' + 
+                message + 
+                '<span class="time">' + timeStr + '</span>';
+            
+            chat.appendChild(messageDiv);
+            chat.scrollTop = chat.scrollHeight;
+        }
+
+        function sendMessage() {
+            const messageInput = document.getElementById('message-input');
+            const username = document.getElementById('username').value || currentUser;
+            const message = messageInput.value.trim();
+            
+            if (message) {
+                // 保存消息到 Firebase
+                db.collection('messages').add({
+                    user: username,
+                    text: message,
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                
+                messageInput.value = '';
+                
+                // 更新在线状态
+                userOnline();
+            }
+        }
+
+        // 事件监听
+        document.getElementById('message-input').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        document.getElementById('username').addEventListener('change', function() {
+            userOnline();
+        });
+
+        // 页面加载时设置在线状态
+        window.addEventListener('load', function() {
+            userOnline();
+            // 每20秒更新一次在线状态
+            setInterval(userOnline, 20000);
+        });
+
+        // 自动聚焦到输入框
+        document.getElementById('message-input').focus();
+    </script>
+</body>
+</html>
